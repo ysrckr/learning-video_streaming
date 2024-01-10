@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,12 +10,14 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
+	"github.com/kodefluence/aurelia"
 )
 
 var videoPath = "./videos/video.mp4"
 
 const PORT = "8000"
+
+const SECRET = "super secret"
 
 type VideoInfo struct {
 	VideoURL string `json:"video_url"`
@@ -38,20 +39,17 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 	videoName := r.URL.Query().Get("video_name")
 	expiresAt := time.Now().Add(15 * time.Minute).Unix()
 
-	signature, err := HashAndSalt(fmt.Sprintf("%d%s", expiresAt, videoName), 6)
-	if err != nil {
-		w.Write([]byte(err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	signature := aurelia.Hash(SECRET, fmt.Sprintf("%d%s", expiresAt, videoName))
+
 	videoInfo := &VideoInfo{
 		VideoURL: fmt.Sprintf("http://localhost:8000/videos/video.mp4?signature=%s&expires_at=%d", signature, expiresAt),
 	}
 
 	info, err := json.Marshal(videoInfo)
 	if err != nil {
-		w.Write([]byte(err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+
 		return
 	}
 
@@ -62,10 +60,44 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func streamVideo(w http.ResponseWriter, r *http.Request) {
+	signature := r.URL.Query().Get("signature")
+	expiresAt := r.URL.Query().Get("expires_at")
+
+	if signature == "" || expiresAt == "" {
+		message := "signature and expires_at cannot be empty"
+
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(message))
+
+		return
+	}
+
+	expiresAtUnix, err := strconv.Atoi(expiresAt)
+	if err != nil {
+		message := "invalid expires date"
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(message))
+		return
+	}
+
+	if !aurelia.Authenticate(SECRET, fmt.Sprintf("%d%s", expiresAtUnix, "video.mp4"), signature) {
+		message := "unauthorized"
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(message))
+		return
+	}
+
+	if time.Now().After(time.Unix(int64(expiresAtUnix), 0)) {
+		message := "video not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(message))
+		return
+	}
+
 	data, err := os.ReadFile(videoPath)
 	if err != nil {
-		w.Write([]byte(err.Error()))
 		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(err.Error()))
 	}
 
 	getNumber := regexp.MustCompile(`\d`)
@@ -94,23 +126,23 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 	w.Write(data[start:end])
 }
 
-func HashAndSalt(s string, cost int) (string, error) {
-	var err error
-	var hashed []byte
-	if cost <= bcrypt.MinCost {
-		hashed, err = bcrypt.GenerateFromPassword([]byte(s), bcrypt.DefaultCost)
-		if err != nil {
-			return "", errors.New("couldn't hash")
-		}
+// func HashAndSalt(s string, cost int) (string, error) {
+// 	var err error
+// 	var hashed []byte
+// 	if cost <= bcrypt.MinCost {
+// 		hashed, err = bcrypt.GenerateFromPassword([]byte(s), bcrypt.DefaultCost)
+// 		if err != nil {
+// 			return "", errors.New("couldn't hash")
+// 		}
 
-		return string(hashed), nil
-	}
+// 		return string(hashed), nil
+// 	}
 
-	hashed, err = bcrypt.GenerateFromPassword([]byte(s), cost)
-	if err != nil {
-		return "", errors.New("couldn't hash")
-	}
+// 	hashed, err = bcrypt.GenerateFromPassword([]byte(s), cost)
+// 	if err != nil {
+// 		return "", errors.New("couldn't hash")
+// 	}
 
-	return string(hashed), nil
+// 	return string(hashed), nil
 
-}
+// }
