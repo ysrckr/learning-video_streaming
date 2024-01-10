@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kodefluence/aurelia"
+	"github.com/rs/cors"
 )
 
 var videoPath = "./videos/video.mp4"
@@ -24,12 +25,13 @@ type VideoInfo struct {
 }
 
 func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/videos", createSignedURL)
+	mux.HandleFunc("/videos/video.mp4", streamVideo)
 
-	http.HandleFunc("/videos", createSignedURL)
-	http.HandleFunc("/videos/video.mp4", streamVideo)
-
+	handler := cors.Default().Handler(mux)
 	fmt.Println("Running on http://localhost:" + PORT)
-	if err := http.ListenAndServe(":"+PORT, nil); err != nil {
+	if err := http.ListenAndServe(":"+PORT, handler); err != nil {
 		log.Fatalln(err)
 		os.Exit(1)
 	}
@@ -49,13 +51,12 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
-
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(info)
 	w.WriteHeader(http.StatusOK)
+	w.Write(info)
 
 }
 
@@ -110,8 +111,8 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 	chunkSize := 1024 * 1024
 	start, err := strconv.Atoi(startString)
 	if err != nil {
-		w.Write([]byte(err.Error()))
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
 	}
 	end := min((start + chunkSize), (fileSize - 1))
 
