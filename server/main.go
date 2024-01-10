@@ -1,27 +1,64 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 var videoPath = "./videos/video.mp4"
 
 const PORT = "8000"
 
+type VideoInfo struct {
+	VideoURL string `json:"video_url"`
+}
+
 func main() {
 
-	http.HandleFunc("/videos", streamVideo)
+	http.HandleFunc("/videos", createSignedURL)
+	http.HandleFunc("/videos/video.mp4", streamVideo)
 
 	fmt.Println("Running on http://localhost:" + PORT)
 	if err := http.ListenAndServe(":"+PORT, nil); err != nil {
 		log.Fatalln(err)
 		os.Exit(1)
 	}
+}
+
+func createSignedURL(w http.ResponseWriter, r *http.Request) {
+	videoName := r.URL.Query().Get("video_name")
+	expiresAt := time.Now().Add(15 * time.Minute).Unix()
+
+	signature, err := HashAndSalt(fmt.Sprintf("%d%s", expiresAt, videoName), 6)
+	if err != nil {
+		w.Write([]byte(err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	videoInfo := &VideoInfo{
+		VideoURL: fmt.Sprintf("http://localhost:8000/videos/video.mp4?signature=%s&expires_at=%d", signature, expiresAt),
+	}
+
+	info, err := json.Marshal(videoInfo)
+	if err != nil {
+		w.Write([]byte(err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(info)
+	w.WriteHeader(http.StatusOK)
+
 }
 
 func streamVideo(w http.ResponseWriter, r *http.Request) {
@@ -55,4 +92,25 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusPartialContent)
 	w.Write(data[start:end])
+}
+
+func HashAndSalt(s string, cost int) (string, error) {
+	var err error
+	var hashed []byte
+	if cost <= bcrypt.MinCost {
+		hashed, err = bcrypt.GenerateFromPassword([]byte(s), bcrypt.DefaultCost)
+		if err != nil {
+			return "", errors.New("couldn't hash")
+		}
+
+		return string(hashed), nil
+	}
+
+	hashed, err = bcrypt.GenerateFromPassword([]byte(s), cost)
+	if err != nil {
+		return "", errors.New("couldn't hash")
+	}
+
+	return string(hashed), nil
+
 }
