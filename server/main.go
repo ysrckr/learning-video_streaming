@@ -126,24 +126,3 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusPartialContent)
 	w.Write(data[start:end])
 }
-
-// func HashAndSalt(s string, cost int) (string, error) {
-// 	var err error
-// 	var hashed []byte
-// 	if cost <= bcrypt.MinCost {
-// 		hashed, err = bcrypt.GenerateFromPassword([]byte(s), bcrypt.DefaultCost)
-// 		if err != nil {
-// 			return "", errors.New("couldn't hash")
-// 		}
-
-// 		return string(hashed), nil
-// 	}
-
-// 	hashed, err = bcrypt.GenerateFromPassword([]byte(s), cost)
-// 	if err != nil {
-// 		return "", errors.New("couldn't hash")
-// 	}
-
-// 	return string(hashed), nil
-
-// }
