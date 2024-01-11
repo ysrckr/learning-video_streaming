@@ -28,17 +28,18 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/videos", createSignedURL)
-	stream := http.HandlerFunc(streamVideo)
-	mux.Handle("/videos/video.mp4", checkSignature(stream))
 
-	handler := cors.Default().Handler(mux)
+	mux.Handle("/videos/video.mp4", checkSignature(http.HandlerFunc(streamVideo)))
+
+	corsHandler := cors.Default().Handler(mux)
 	fmt.Println("Running on http://localhost:" + PORT)
-	if err := http.ListenAndServe(":"+PORT, handler); err != nil {
+	if err := http.ListenAndServe(":"+PORT, corsHandler); err != nil {
 		log.Fatalln(err)
 		os.Exit(1)
 	}
 }
 
+// SignedURL contorller
 func createSignedURL(w http.ResponseWriter, r *http.Request) {
 	videoName := r.URL.Query().Get("video_name")
 	expiresAt := time.Now().Add(15 * time.Minute).Unix()
@@ -62,8 +63,8 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Stream the video controller
 func streamVideo(w http.ResponseWriter, r *http.Request) {
-
 	data, err := os.ReadFile(videoPath)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -96,6 +97,7 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 	w.Write(data[start:end])
 }
 
+// Middleware to check signature and expiration
 func checkSignature(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		signature := r.URL.Query().Get("signature")
