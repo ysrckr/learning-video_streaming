@@ -4,9 +4,7 @@ import { Suspense, createResource } from 'solid-js';
 
 const getVideoURL = async () => {
   try {
-    const res = await fetch(
-      'http://localhost:8000/videos?video_name=video.mp4',
-    );
+    const res = await fetch('http://localhost:8000/videos?video_name=video');
     return res.json();
   } catch (error) {
     console.error(error);
@@ -15,14 +13,12 @@ const getVideoURL = async () => {
 
 function App() {
   const [url] = createResource(getVideoURL);
-
-  console.log(url(), url.loading);
-
+  const videoURL = url()?.['video_url'];
   return (
     <main>
       <Suspense fallback={<p>Loading</p>}>
-        <video controls width={500}>
-          <source src={url()?.['video_url']} type="video/mp4" />{' '}
+        <video controls loop width={500}>
+          <source src={videoURL} type="video/mp4" />{' '}
           <p>Your browser cannot play the provided video file.</p>
         </video>
       </Suspense>
