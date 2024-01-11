@@ -14,8 +14,6 @@ import (
 	"github.com/rs/cors"
 )
 
-var videoPath = "./videos/video.mp4"
-
 const PORT = "8000"
 
 const SECRET = "super secret"
@@ -29,7 +27,7 @@ func main() {
 
 	mux.HandleFunc("/videos", createSignedURL)
 
-	mux.Handle("/videos/video.mp4", checkSignature(http.HandlerFunc(streamVideo)))
+	mux.Handle("/videos/video", checkSignature(http.HandlerFunc(streamVideo)))
 
 	corsHandler := cors.Default().Handler(mux)
 	fmt.Println("Running on http://localhost:" + PORT)
@@ -47,7 +45,7 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 	signature := aurelia.Hash(SECRET, fmt.Sprintf("%d%s", expiresAt, videoName))
 
 	videoInfo := &VideoInfo{
-		VideoURL: fmt.Sprintf("http://localhost:8000/videos/video.mp4?signature=%s&expires_at=%d", signature, expiresAt),
+		VideoURL: fmt.Sprintf("http://localhost:8000/videos/video?signature=%s&expires_at=%d&video_name=%s", signature, expiresAt, videoName),
 	}
 
 	info, err := json.Marshal(videoInfo)
@@ -65,6 +63,8 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 
 // Stream the video controller
 func streamVideo(w http.ResponseWriter, r *http.Request) {
+	videoName := r.URL.Query().Get("video_name")
+	videoPath := fmt.Sprintf("./videos/%s.mp4", videoName)
 	data, err := os.ReadFile(videoPath)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -84,13 +84,14 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(err.Error()))
 	}
+
 	end := min((start + chunkSize), (fileSize - 1))
 
-	contentLength := fileSize - start
+	contentLength := end - start
 
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Length", strconv.Itoa(contentLength))
-	w.Header().Set("Content-Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end)+"/"+strconv.Itoa(fileSize))
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	w.WriteHeader(http.StatusPartialContent)
@@ -102,6 +103,7 @@ func checkSignature(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		signature := r.URL.Query().Get("signature")
 		expiresAt := r.URL.Query().Get("expires_at")
+		videoName := r.URL.Query().Get("video_name")
 
 		if signature == "" || expiresAt == "" {
 			message := "signature and expires_at cannot be empty"
@@ -120,7 +122,7 @@ func checkSignature(next http.Handler) http.Handler {
 			return
 		}
 
-		if !aurelia.Authenticate(SECRET, fmt.Sprintf("%d%s", expiresAtUnix, "video.mp4"), signature) {
+		if !aurelia.Authenticate(SECRET, fmt.Sprintf("%d%s", expiresAtUnix, videoName), signature) {
 			message := "unauthorized"
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(message))
