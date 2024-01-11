@@ -86,7 +86,7 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	end := min((start + chunkSize), (fileSize - 1))
 
-	contentLength := end - start
+	contentLength := fileSize - start
 
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Length", strconv.Itoa(contentLength))
