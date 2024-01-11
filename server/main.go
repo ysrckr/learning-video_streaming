@@ -26,8 +26,10 @@ type VideoInfo struct {
 
 func main() {
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/videos", createSignedURL)
-	mux.HandleFunc("/videos/video.mp4", streamVideo)
+	stream := http.HandlerFunc(streamVideo)
+	mux.Handle("/videos/video.mp4", checkSignature(stream))
 
 	handler := cors.Default().Handler(mux)
 	fmt.Println("Running on http://localhost:" + PORT)
@@ -61,39 +63,6 @@ func createSignedURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func streamVideo(w http.ResponseWriter, r *http.Request) {
-	signature := r.URL.Query().Get("signature")
-	expiresAt := r.URL.Query().Get("expires_at")
-
-	if signature == "" || expiresAt == "" {
-		message := "signature and expires_at cannot be empty"
-
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(message))
-
-		return
-	}
-
-	expiresAtUnix, err := strconv.Atoi(expiresAt)
-	if err != nil {
-		message := "invalid expires date"
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(message))
-		return
-	}
-
-	if !aurelia.Authenticate(SECRET, fmt.Sprintf("%d%s", expiresAtUnix, "video.mp4"), signature) {
-		message := "unauthorized"
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(message))
-		return
-	}
-
-	if time.Now().After(time.Unix(int64(expiresAtUnix), 0)) {
-		message := "video not found"
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(message))
-		return
-	}
 
 	data, err := os.ReadFile(videoPath)
 	if err != nil {
@@ -125,4 +94,43 @@ func streamVideo(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusPartialContent)
 	w.Write(data[start:end])
+}
+
+func checkSignature(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		signature := r.URL.Query().Get("signature")
+		expiresAt := r.URL.Query().Get("expires_at")
+
+		if signature == "" || expiresAt == "" {
+			message := "signature and expires_at cannot be empty"
+
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(message))
+
+			return
+		}
+
+		expiresAtUnix, err := strconv.Atoi(expiresAt)
+		if err != nil {
+			message := "invalid expires date"
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(message))
+			return
+		}
+
+		if !aurelia.Authenticate(SECRET, fmt.Sprintf("%d%s", expiresAtUnix, "video.mp4"), signature) {
+			message := "unauthorized"
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(message))
+			return
+		}
+
+		if time.Now().After(time.Unix(int64(expiresAtUnix), 0)) {
+			message := "video not found"
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(message))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
